@@ -30,6 +30,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from model import MInterface
 from data import DInterface
 from utils import load_model_path_by_args
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
 
 def load_callbacks():
@@ -54,79 +56,26 @@ def load_callbacks():
             logging_interval='epoch'))
     return callbacks
 
+@hydra.main(version_base=None, config_path='model/', config_name='config.yaml')
+def main(cfg:DictConfig) -> None:
+    pl.seed_everything(cfg.seed)
 
-def main(args):
-    pl.seed_everything(args.seed)
-    load_path = load_model_path_by_args(args)
-    data_module = DInterface(**vars(args))
+    data_module = DInterface(cfg)
 
-    if load_path is None:
-        model = MInterface(**vars(args))
-    else:
-        model = MInterface(**vars(args))
-        args.ckpt_path = load_path
+    model = MInterface(cfg)
 
+    # Setup loggers
+    logger = TensorBoardLogger(os.path.join(cfg.paths.output_dir, 'tensorboard'), name='', version='', default_hp_metric=False)
+    loggers = [logger]
+    
     # # If you want to change the logger's saving folder
-    # logger = TensorBoardLogger(save_dir='kfold_log', name=args.log_dir)
-    # args.callbacks = load_callbacks()
-    # args.logger = logger
+    logger = TensorBoardLogger(save_dir='kfold_log', name=args.log_dir)
+    args.callbacks = load_callbacks()
+    args.logger = logger
 
     trainer = Trainer.from_argparse_args(args)
     trainer.fit(model, data_module)
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    # Basic Training Control
-    parser.add_argument('--batch_size', default=32, type=int)
-    parser.add_argument('--num_workers', default=8, type=int)
-    parser.add_argument('--seed', default=1234, type=int)
-    parser.add_argument('--lr', default=1e-3, type=float)
-
-    # LR Scheduler
-    parser.add_argument('--lr_scheduler', choices=['step', 'cosine'], type=str)
-    parser.add_argument('--lr_decay_steps', default=20, type=int)
-    parser.add_argument('--lr_decay_rate', default=0.5, type=float)
-    parser.add_argument('--lr_decay_min_lr', default=1e-5, type=float)
-
-    # Restart Control
-    parser.add_argument('--load_best', action='store_true')
-    parser.add_argument('--load_dir', default=None, type=str)
-    parser.add_argument('--load_ver', default=None, type=str)
-    parser.add_argument('--load_v_num', default=None, type=int)
-
-    # Training Info
-    parser.add_argument('--dataset', default='standard_data', type=str)
-    parser.add_argument('--data_dir', default='ref/data', type=str)
-    parser.add_argument('--model_name', default='standard_net', type=str)
-    parser.add_argument('--loss', default='bce', type=str)
-    parser.add_argument('--weight_decay', default=1e-5, type=float)
-    parser.add_argument('--no_augment', action='store_true')
-    parser.add_argument('--log_dir', default='lightning_logs', type=str)
-    
-    # Model Hyperparameters
-    parser.add_argument('--hid', default=64, type=int)
-    parser.add_argument('--block_num', default=8, type=int)
-    parser.add_argument('--in_channel', default=3, type=int)
-    parser.add_argument('--layer_num', default=5, type=int)
-
-    # Other
-    parser.add_argument('--aug_prob', default=0.5, type=float)
-
-    # Add pytorch lightning's args to parser as a group.
-    parser = Trainer.add_argparse_args(parser)
-
-    ## Deprecated, old version
-    # parser = Trainer.add_argparse_args(
-    #     parser.add_argument_group(title="pl.Trainer args"))
-
-    # Reset Some Default Trainer Arguments' Default Values
-    parser.set_defaults(max_epochs=100)
-
-    args = parser.parse_args()
-
-    # List Arguments
-    args.mean_sen = [0.485, 0.456, 0.406]
-    args.std_sen = [0.229, 0.224, 0.225]
-
-    main(args)
+    main()
