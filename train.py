@@ -32,23 +32,19 @@ from data import DInterface
 from utils import load_model_path_by_args
 import hydra
 from omegaconf import DictConfig, OmegaConf
-
+from utils.pylogger import get_pylogger
+from utils.misc import log_hyperparameters
+log = get_pylogger(__name__)
 
 def load_callbacks():
     callbacks = []
-    callbacks.append(plc.EarlyStopping(
-        monitor='val_acc',
-        mode='max',
-        patience=10,
-        min_delta=0.001
-    ))
 
     callbacks.append(plc.ModelCheckpoint(
-        monitor='val_acc',
-        filename='best-{epoch:02d}-{val_acc:.3f}',
-        save_top_k=1,
-        mode='max',
-        save_last=True
+        dirpath=os.path.join(cfg.paths.output_dir, 'checkpoints'), 
+        every_n_train_steps=cfg.GENERAL.CHECKPOINT_STEPS, 
+        save_last=True,
+        save_top_k=cfg.GENERAL.CHECKPOINT_SAVE_TOP_K,
+        save_weights_only=True,
     ))
 
     if args.lr_scheduler:
@@ -60,6 +56,8 @@ def load_callbacks():
 def main(cfg:DictConfig) -> None:
     pl.seed_everything(cfg.seed)
 
+    callbacks = load_callbacks()
+
     data_module = DInterface(cfg)
 
     model = MInterface(cfg)
@@ -67,14 +65,32 @@ def main(cfg:DictConfig) -> None:
     # Setup loggers
     logger = TensorBoardLogger(os.path.join(cfg.paths.output_dir, 'tensorboard'), name='', version='', default_hp_metric=False)
     loggers = [logger]
-    
-    # # If you want to change the logger's saving folder
-    logger = TensorBoardLogger(save_dir='kfold_log', name=args.log_dir)
-    args.callbacks = load_callbacks()
-    args.logger = logger
 
-    trainer = Trainer.from_argparse_args(args)
-    trainer.fit(model, data_module)
+    log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
+
+    trainer: Trainer = hydra.utils.instantiate(
+        cfg.trainer, 
+        callbacks=callbacks, 
+        logger=loggers, 
+        plugins=(SLURMEnvironment(requeue_signal=signal.SIGUSR2) if (cfg.get('launcher',None) is not None) else None), # Submitit uses SIGUSR2
+    )
+
+    object_dict = {
+        "cfg": cfg,
+        "datamodule": datamodule,
+        "model": model,
+        "callbacks": callbacks,
+        "logger": logger,
+        "trainer": trainer,
+    }
+
+    if logger:
+        log.info("Logging hyperparameters!")
+        log_hyperparameters(object_dict)
+
+    checkpoint_path = cfg.get('resume_path', None)
+    trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint_path)
+    log.info("Fitting done")
 
 
 if __name__ == '__main__':
