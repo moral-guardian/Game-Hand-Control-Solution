@@ -20,8 +20,8 @@ import torch.optim.lr_scheduler as lrs
 
 import pytorch_lightning as pl
 
-
 class MInterface(pl.LightningModule):
+
     def __init__(self, model_name, loss, lr, **kargs):
         super().__init__()
         self.save_hyperparameters()

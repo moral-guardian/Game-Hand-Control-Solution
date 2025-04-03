@@ -77,7 +77,7 @@ def main(cfg:DictConfig) -> None:
 
     object_dict = {
         "cfg": cfg,
-        "datamodule": datamodule,
+        "datamodule": data_module,
         "model": model,
         "callbacks": callbacks,
         "logger": logger,
@@ -89,7 +89,7 @@ def main(cfg:DictConfig) -> None:
         log_hyperparameters(object_dict)
 
     checkpoint_path = cfg.get('resume_path', None)
-    trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint_path)
+    trainer.fit(model, datamodule=data_module, ckpt_path=checkpoint_path)
     log.info("Fitting done")
 
 
